@@ -170,7 +170,7 @@ for k, v in items.iteritems():
             if (logic['period_type'] == 'YYYYbreakQ' and year != '' and quarter != ''):
                 util_qtr = quarter + year
 
-             # if billing quarter is not listed in the file, default to invoice quarter
+                # if billing quarter is not listed in the file, default to invoice quarter
             if not util_qtr:
                 util_qtr = inv_qtr[5:6] + inv_qtr[:4]
 
@@ -186,21 +186,22 @@ for k, v in items.iteritems():
                     length = int(logic['ura_length'])
                     pattern = r"\d+\.\d{%d}" % length
                     ura_string = re.findall(pattern, r)
-                    # ~ checkr = r.replace(' ','')
-                    #~ pattern = logic['detail_check']
-                    pattern = r"\d*[.,]\d{%d}" % length
-                    #~ pattern = r"\d+\.\d{%d}" % length
-                    inv_detail_check = re.findall(pattern, r)
+                    ura_pattern = r"\d*[.,]\d{%d}" % length
+                    ura_detail_check = re.findall(ura_pattern, r)
+                    ndc_no_hyphen = r.replace('-','').replace('O','0')
+                    ndc_pattern = r"^\d{11}"
+                    ndc_detail_check = re.findall(ndc_pattern,ndc_no_hyphen)
+                    
             else:
                 if logic['pq_ura_length']:
                     length = int(logic['pq_ura_length'])
                     pattern = r"\d+\.\d{%d}" % length
                     pq_ura_string = re.findall(pattern, r)
-                    # ~ checkr = r.replace(' ','')
-                    #~ pattern = logic['pq_detail_check']
-                    pattern = r"\d*[.,]\d{%d}" % length
-                    #~ pattern = r"\d+\.\d{%d}" % length
-                    inv_detail_check = re.findall(pattern, r)
+                    ura_pattern = r"\d*[.,]\d{%d}" % length
+                    ura_detail_check = re.findall(ura_pattern, r)
+                    ndc_no_hyphen = r.replace('-','').replace('O','0')
+                    ndc_pattern = r"^\d{11}"
+                    ndc_detail_check = re.findall(ndc_pattern,ndc_no_hyphen)
 
             detail = 'n'
 
@@ -227,7 +228,7 @@ for k, v in items.iteritems():
 
             # dynamically inserts python logic to identify invoice line item detail based on the invoice type which is defined in the medicaid->invoice_types table
             #~ exec (logic['code_line_id'])
-            if inv_detail_check:
+            if ura_detail_check or ndc_detail_check:
                 detail = 'y'
 
             if detail == 'y':
@@ -385,12 +386,13 @@ for k, v in items.iteritems():
                 else:
                     if logic['pq_units']:
                         units = info[int(logic['pq_units'])]
-                        if '.' not in units:
-                            if state == 'MT' and type == 'MEDIJC' or type == 'MEDIEXP':
-                                print 'MT_MEDIJC pq_units decimal absent'
-                            else:
-                                print units
-                                raise MyException('units missing decimal, please review')
+                        if 'covenant' not in str(logic['notes']):
+                            if '.' not in units:
+                                if state == 'MT' and type == 'MEDIJC' or type == 'MEDIEXP':
+                                    print 'MT_MEDIJC pq_units decimal absent'
+                                else:
+                                    print units
+                                    raise MyException('units missing decimal, please review')
                         units = str('%015.3f' % float(units))
                     else:
                         str("%015.3f" % 0)
