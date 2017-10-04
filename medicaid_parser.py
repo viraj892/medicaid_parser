@@ -8,9 +8,11 @@ import string
 import itertools
 import os
 
+
 class MyException(Exception):
     """Custom exception for intuitive error messages"""
     pass
+
 
 args = sys.argv
 
@@ -61,7 +63,7 @@ for k, v in items.iteritems():
     base_filename = os.path.basename(file)
 
     querystring = (
-                  "SELECT * FROM invoice_logic il LEFT JOIN invoice_types it ON il.invoice_type = it.id WHERE il.`key` = '%s'") % key
+                      "SELECT * FROM invoice_logic il LEFT JOIN invoice_types it ON il.invoice_type = it.id WHERE il.`key` = '%s'") % key
     cursor.execute(querystring)
 
     field_names = [d[0].lower() for d in cursor.description]
@@ -155,6 +157,7 @@ for k, v in items.iteritems():
                             year = info[1][:4]
                         elif x == 'QTR':
                             quarter = info[1][:1]
+
                     elif logic['period_type'] == '# QUARTER YYYY':
                         quarter = textqmap[x]
                         info = r.split(str(x))
@@ -170,7 +173,7 @@ for k, v in items.iteritems():
             if (logic['period_type'] == 'YYYYbreakQ' and year != '' and quarter != ''):
                 util_qtr = quarter + year
 
-                # if billing quarter is not listed in the file, default to invoice quarter
+            # if billing quarter is not listed in the file, default to invoice quarter
             if not util_qtr:
                 util_qtr = inv_qtr[5:6] + inv_qtr[:4]
 
@@ -188,10 +191,10 @@ for k, v in items.iteritems():
                     ura_string = re.findall(pattern, r)
                     ura_pattern = r"\d*[.,]\d{%d}" % length
                     ura_detail_check = re.findall(ura_pattern, r)
-                    ndc_no_hyphen = r.replace('-','').replace('O','0')
+                    ndc_no_hyphen = r.replace('-', '').replace('O', '0')
                     ndc_pattern = r"^\d{11}"
-                    ndc_detail_check = re.findall(ndc_pattern,ndc_no_hyphen)
-                    
+                    ndc_detail_check = re.findall(ndc_pattern, ndc_no_hyphen)
+
             else:
                 if logic['pq_ura_length']:
                     length = int(logic['pq_ura_length'])
@@ -199,9 +202,9 @@ for k, v in items.iteritems():
                     pq_ura_string = re.findall(pattern, r)
                     ura_pattern = r"\d*[.,]\d{%d}" % length
                     ura_detail_check = re.findall(ura_pattern, r)
-                    ndc_no_hyphen = r.replace('-','').replace('O','0')
+                    ndc_no_hyphen = r.replace('-', '').replace('O', '0')
                     ndc_pattern = r"^\d{11}"
-                    ndc_detail_check = re.findall(ndc_pattern,ndc_no_hyphen)
+                    ndc_detail_check = re.findall(ndc_pattern, ndc_no_hyphen)
 
             detail = 'n'
 
@@ -227,7 +230,7 @@ for k, v in items.iteritems():
                             cms[idx] = item.replace('11900', str(util_qtr))
 
             # dynamically inserts python logic to identify invoice line item detail based on the invoice type which is defined in the medicaid->invoice_types table
-            #~ exec (logic['code_line_id'])
+            # exec (logic['code_line_id'])
             if ura_detail_check or ndc_detail_check:
                 detail = 'y'
 
@@ -503,8 +506,7 @@ for k, v in items.iteritems():
                      'claimed': claimed, 'scripts': scripts, 'medi_reimb': medi_reimb, 'non_medi_reimb': non_medi_reimb,
                      'total_reimb': total_reimb, 'corr_flag': corr_flag})
 
-                if len(
-                                                                                                                                        rtype + state + labeler + prod + size + util_qtr + name + ura + units + claimed + scripts + medi_reimb + non_medi_reimb + total_reimb + corr_flag) != 120:
+                if len(rtype + state + labeler + prod + size + util_qtr + name + ura + units + claimed + scripts + medi_reimb + non_medi_reimb + total_reimb + corr_flag) != 120:
                     print str(len(
                         rtype + state + labeler + prod + size + util_qtr + name + ura + units + claimed + scripts + medi_reimb + non_medi_reimb + total_reimb + corr_flag)), r
                     print rtype, state, labeler, prod, size, util_qtr, name, ura, units, claimed, scripts, medi_reimb, non_medi_reimb, total_reimb, corr_flag
@@ -534,7 +536,6 @@ for k, v in items.iteritems():
             unknown_ecount += 1
             unknown_errors.append('row #: ' + str(row) + ' error: ' + str(e) + ' ' + r)
 
-
     # ~ print errors
 
     # ~ print state, type, rtype, inv_qtr, util_qtr, str(round(float(ecount)/float(row)*100,2))+'%'
@@ -548,12 +549,10 @@ for k, v in items.iteritems():
             row) + ', Detail rows: ' + str(detail_row) + ', Error rows: ' + str(ecount) + ', Error percentage: ' + str(
             round(float(ecount) / float(detail_row) * 100, 2)) + '%' + '\r\n')
 
-
-
     # ~ Printing for errors + unknown_errors
     print labeler, state, type, rtype, util_qtr, inv_qtr, ' - Total rows: ' + str(row) + ', Detail rows: ' + str(
-        detail_row) + ', Error rows: ' + str(ecount+unknown_ecount) + ', Error percentage: ' + str(
-        round(float(ecount+unknown_ecount) / float(detail_row) * 100, 2)) + '%'
+        detail_row) + ', Error rows: ' + str(ecount + unknown_ecount) + ', Error percentage: ' + str(
+        round(float(ecount + unknown_ecount) / float(detail_row) * 100, 2)) + '%'
 
     tech_error_file = 'F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_TECHNICAL_ERRORS.txt' % (
         inv_qtr, labeler, state, type)
@@ -569,10 +568,8 @@ for k, v in items.iteritems():
             for r in unknown_errors:
                 output_file.write(r + '\r\n')
 
-
-
     error_file = 'F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_ERRORS.txt' % (
-    inv_qtr, labeler, state, type)
+        inv_qtr, labeler, state, type)
     try:
         os.remove(error_file)
     except OSError:
