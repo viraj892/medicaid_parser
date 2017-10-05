@@ -7,6 +7,7 @@ import re
 import string
 import itertools
 import os
+import time
 
 
 # class for custom exceptions
@@ -55,6 +56,8 @@ mco_lookup = ['MCO', 'Managed']
 ffs_lookup = ['FFS']
 cmsd = {}
 logic = {}
+ocr_details_list = []
+ocr_error_list = []
 year = ''
 quarter = ''
 prior_qtr_flag = 'n'
@@ -65,6 +68,7 @@ querystring = ("SELECT * FROM invoice_logic il "
 cursor.execute(querystring)
 field_names = [d[0].lower() for d in cursor.description]
 rows = cursor.fetchmany()
+
 for row in rows:
     logic.update(dict(itertools.izip(field_names, row)))
 
@@ -83,6 +87,8 @@ except KeyError:
             datetime.datetime.now()) + ' ' + key + ' not yet added to OCR tool, please contact brian.coleman@cumberlandcg.com' + '\r\n')
 
 for row in lines:
+    ocr_details = {}
+    ocr_errors = {}
     row_count += 1
     row_clean = ''  # every row of raw text after performing a cleaning action and uppercased
     info = ''  # intermediate string(row) to extract specific details
@@ -216,13 +222,18 @@ for row in lines:
                     if '11900' in item:
                         cms[idx] = item.replace('11900', str(util_qtr))
 
-        # set the detail_flag
+        # check if current row is a detail_row & set the detail_flag
         if ura_detail_check or ndc_detail_check:
             detail_row_flag = 'y'
 
         # Extract all information if current row is a detail row
         if detail_row_flag == 'y':
             detail_row_count += 1
+
+            # setting ocr_details table info
+            ocr_details["row_number"] = row_count
+            ocr_details["detail_row_number"] = detail_row_count
+
             # Get utilization quarter from the line item info
             if prior_qtr_flag == 'y':
                 # extract period when prior quarter period is a part of the detail row
@@ -498,6 +509,51 @@ for row in lines:
                  'non_medi_reimb': non_medi_reimb,
                  'total_reimb': total_reimb, 'corr_flag': corr_flag})
 
+            # setting ocr_details table info and appending to ocr_details_list
+            ocr_details["row_number"] = int(row_count)
+            ocr_details["detail_row_number"] = int(detail_row_count)
+            ocr_details["ndc"] = str(ndc)
+            ocr_details["ura"] = float(ura)
+            ocr_details["units"] = float(units)
+            ocr_details["claimed"] = float(claimed)
+            ocr_details["scripts"] = int(scripts)
+            ocr_details["medi_reimbursed"] = float(medi_reimb)
+            ocr_details["non_medi_reimbursed"] = float(non_medi_reimb)
+            ocr_details["raw_detail_row"] = str(row_upper)  # upper cased raw detail row
+            ocr_details["raw_info_list"] = "|".join(info_list)
+
+            # process inv_qtr into date format before insert
+            split_inv_qtr = str(inv_qtr).split('Q')
+            temp_qtr_date = ''
+            if split_inv_qtr[1] == '1':
+                temp_qtr_date = split_inv_qtr[0] + '/01/01'
+            elif split_inv_qtr[1] == '2':
+                temp_qtr_date = split_inv_qtr[0] + '/04/01'
+            elif split_inv_qtr[1] == '3':
+                temp_qtr_date = split_inv_qtr[0] + '/07/01'
+            elif split_inv_qtr[1] == '4':
+                temp_qtr_date = split_inv_qtr[0] + '/10/01'
+
+            ocr_details["invoice_qtr"] = str(temp_qtr_date)
+
+            # process util_qtr into date format before insert
+            temp_util_date = ''
+            temp_qtr = util_qtr[0]
+            temp_year = util_qtr[-4:]
+            if temp_qtr == '1':
+                temp_util_date = temp_year + '/01/01'
+            elif temp_qtr == '2':
+                temp_util_date = temp_year + '/04/01'
+            elif temp_qtr == '3':
+                temp_util_date = temp_year + '/07/01'
+            elif temp_qtr == '4':
+                temp_util_date = temp_year + '/10/01'
+
+            ocr_details["utilization_qtr"] = str(temp_util_date)
+            ocr_details["invoice_number"] = str(inv_num).replace(': ', '')
+
+            ocr_details_list.append(ocr_details)
+
             if len(rtype + state + labeler + prod + size + util_qtr +
                            name + ura + units + claimed + scripts + medi_reimb + non_medi_reimb + total_reimb + corr_flag) != 120:
                 print str(len(
@@ -521,24 +577,33 @@ for row in lines:
             # for item in info_list:
             #     print str(item) + " "
 
-
     except MyException as e:
         print row_clean
         print str(e)
         error_count += 1
         errors.append('row #: ' + str(row_count) + ' error: ' + str(e) + ' ' + row_clean)
+        ocr_errors["row_number"] = row_count
+        ocr_errors["detail_row_number"] = detail_row_count
+        ocr_errors["message"] = str(e.message)
+        ocr_errors["type"] = str("User Error")
+        ocr_error_list.append(ocr_errors)
 
     except Exception as e:
         print row_clean
         print str(e.message)
         unknown_error_count += 1
         unknown_errors.append('row #: ' + str(row_count) + ' error: ' + str(e) + ' ' + row_clean)
+        ocr_errors["row_number"] = row_count
+        ocr_errors["detail_row_number"] = detail_row_count
+        ocr_errors["message"] = str(e.message)
+        ocr_errors["type"] = str("Technical Error")
+        ocr_error_list.append(ocr_errors)
 
 # print performance and accuracy stats in console
 print error_count, unknown_error_count, detail_row_count
 
-total_error_count = error_count + unknown_error_count
-total_error_percent = round(float(total_error_count)/float(detail_row_count)*100, 2)
+total_error_count = error_count
+total_error_percent = round(float(total_error_count) / float(detail_row_count) * 100, 2)
 
 print labeler, state, type, rtype, util_qtr, inv_qtr, ' - Total rows: ' + str(row_count) + ', Detail rows: ' + str(
     detail_row_count) + ', Error rows: ' + str(error_count) + ', Error percentage: ' + str(
@@ -553,15 +618,15 @@ with open('log_test.txt', 'ab') as output_file:
         + 'Technical Errors:' + str(unknown_error_count) + ', Total Error percentage: '
         + str(total_error_percent) + '%' + '\r\n')
 
-    # create file for logging errors
-    # tech_error_file = 'F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_TECHNICAL_ERRORS.txt' % (
-    #         inv_qtr, labeler, state, type)
-    tech_error_file = '%s_%s_%s_%s_TECHNICAL_ERRORS.txt' % (inv_qtr, labeler, state, type)
-    # error_file = 'F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_ERRORS.txt' % (
-    #         inv_qtr, labeler, state, type)
-    error_file = '%s_%s_%s_%s_ERRORS.txt' % (inv_qtr, labeler, state, type)
+# create file for logging errors
+# tech_error_file = 'F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_TECHNICAL_ERRORS.txt' % (
+#         inv_qtr, labeler, state, type)
+tech_error_file = '%s_%s_%s_%s_TECHNICAL_ERRORS.txt' % (inv_qtr, labeler, state, type)
+# error_file = 'F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_ERRORS.txt' % (
+#         inv_qtr, labeler, state, type)
+error_file = '%s_%s_%s_%s_ERRORS.txt' % (inv_qtr, labeler, state, type)
 
-    # remove existing error files for this invoice
+# remove existing error files for this invoice
 try:
     os.remove(tech_error_file)
 except OSError:
@@ -602,11 +667,43 @@ with open('%s_%s_%s_%s_cms.txt' % (inv_qtr, labeler, state, type), 'wb') as outp
         output_file.write(r + '\r\n')
 
 # insert into ocr_header table
-header_query = "INSERT INTO OCR_HEADER VALUES (id,'%s',null,'%s','%s','%s','%s','%s')" % (str(invoice_file), str(row_count), str(detail_row_count), str(error_count), str(unknown_error_count), str(total_error_percent))
-cursor.execute(header_query)
+ocr_header_insert = "INSERT INTO OCR_HEADER VALUES (id,'%s',null,'%s','%s','%s','%s','%s', NOW())" % (
+    str(invoice_file), str(row_count), str(detail_row_count), str(error_count), str(unknown_error_count),
+    str(total_error_percent))
+cursor.execute(ocr_header_insert)
 con.commit()
 
+# get id reference of this invoice for ocr_details & ocr_errors
+get_id_query = "SELECT id FROM OCR_HEADER WHERE invoice_file='%s' ORDER BY timestamp DESC LIMIT 1" % (
+    str(invoice_file))
 
+# # query string for SQL Server
+# get_id_query = "SELECT id FROM OCR_HEADER WHERE timestamp =  ( SELECT MAX( timestamp ) FROM OCR_HEADER WHERE invoice_file = '%s' )" % (
+#     str(invoice_file))
+
+cursor.execute(get_id_query)
+ocr_header_id = cursor.fetchone()[0]
+
+# add header_id into every map of details and errors list
+for x in ocr_details_list:
+    x["ocr_header_id"] = int(ocr_header_id)
+
+for x in ocr_error_list:
+    x["ocr_header_id"] = int(ocr_header_id)
+
+# formulate query for insertion into ocr_details
+ocr_details_insert = "INSERT INTO OCR_DETAILS VALUES(%(ocr_header_id)s, %(row_number)s, %(detail_row_number)s," \
+                     " %(ndc)s, %(ura)s, %(units)s, %(claimed)s, %(scripts)s, %(medi_reimbursed)s, %(non_medi_reimbursed)s," \
+                     " %(raw_detail_row)s, %(raw_info_list)s, %(invoice_qtr)s, %(utilization_qtr)s, %(invoice_number)s)"
+cursor.executemany(ocr_details_insert, ocr_details_list)
+con.commit()
+
+# formulate query for insertion into ocr_errors
+ocr_errors_insert = "INSERT INTO OCR_ERRORS VALUES (%(ocr_header_id)s, %(row_number)s, %(detail_row_number)s, %(message)s, %(type)s)"
+# insert errors only if they exist
+if ocr_error_list:
+    cursor.executemany(ocr_errors_insert, ocr_error_list)
+    con.commit()
 
 cursor.close()
 con.close
