@@ -650,7 +650,7 @@ with open('F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s
     dict_writer.writerows(human)
 
 # write all details into cms file
-with open('F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_cms.txt' (inv_qtr, labeler, state, type), 'wb') as output_file:
+with open('F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_cms.txt' % (inv_qtr, labeler, state, type), 'wb') as output_file:
     for r in cms:
         output_file.write(r + '\r\n')
 
