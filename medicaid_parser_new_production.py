@@ -25,7 +25,7 @@ inv_qtr = args[3]
 labeler = args[4]
 
 # MySQL connection
-con = mysql.connector.connect(user='ccgremote', password='ncsuball', host='127.0.0.1', database='medicaid')
+con = mysql.connector.connect(user='root', password='ncsuball', host='127.0.0.1', database='medicaid')
 cursor = con.cursor()
 
 # Quarter Conversion map for period_type : 'MM/DD/YY' & 'MM/DD/YYYY'
@@ -61,7 +61,8 @@ year = ''
 quarter = ''
 prior_qtr_flag = 'n'
 
-querystring = ("SELECT * FROM invoice_logic il LEFT JOIN invoice_types it ON il.invoice_type = it.id WHERE il.`key` = '%s'") % key
+querystring = (
+                  "SELECT * FROM invoice_logic il LEFT JOIN invoice_types it ON il.invoice_type = it.id WHERE il.`key` = '%s'") % key
 cursor.execute(querystring)
 field_names = [d[0].lower() for d in cursor.description]
 rows = cursor.fetchmany()
@@ -90,7 +91,7 @@ for row in lines:
     row_clean = ''  # every row of raw text after performing a cleaning action and uppercased
     info = ''  # intermediate string(row) to extract specific details
     info_list = ''  # row_clean split into a list
-
+    print 'checkpoint 1'
     try:
         # garbage removal and converting to upper case
         row_upper = row.upper()
@@ -157,7 +158,7 @@ for row in lines:
                     year = info[1][6:10]
                     quarter = qmap[str(month)]
                     util_qtr = quarter + year[:4]
-
+        print 'checkpoint 2'
         if logic['period_type'] == 'YYYYbreakQ' and year != '' and quarter != '':
             util_qtr = quarter + year
 
@@ -222,11 +223,11 @@ for row in lines:
         # check if current row is a detail_row & set the detail_flag
         if ura_detail_check or ndc_detail_check:
             detail_row_flag = 'y'
-
+        print 'checkpoint 3'
         # Extract all information if current row is a detail row
         if detail_row_flag == 'y':
             detail_row_count += 1
-
+            print 'checkpoint 4'
             # setting ocr_details table info
             ocr_details["row_number"] = row_count
             ocr_details["detail_row_number"] = detail_row_count
@@ -282,7 +283,7 @@ for row in lines:
                     start = row_clean.index(' ')
                     end = row_clean.index(str(pq_ura_string[0])) - 1
                     row_clean = row_clean.replace(row_clean[start:end], '')
-
+            print 'checkpoint 5'
             # Additional cleanup of row
             # DN - replace any single dot, i.e. led and followed by space with just space, double space -> single space
             row_clean = re.sub("[^0-9\d.\-\s]", "", row_clean)
@@ -305,7 +306,7 @@ for row in lines:
                     if len(info_list) > int(logic['exp_col']):
                         for x in logic['del_col'].split('|'):
                             del info_list[int(x) - 1:int(x)]
-
+            print 'checkpoint 6'
             # Get NDC
             if prior_qtr_flag == 'n':
                 # ~ ndc = get_ndc.replace('O','0').replace('()','0')
@@ -323,7 +324,7 @@ for row in lines:
             labeler = ndc[:5]
             prod = ndc[5:9]
             size = ndc[9:11]
-
+            print 'checkpoint 7'
             # Default Name to blank with correct spacing
             name = str("          ")
 
@@ -345,7 +346,8 @@ for row in lines:
             else:
                 if logic['pq_exp_col'] and logic['pq_part_col']:
                     if len(info_list) < int(logic['pq_exp_col']) and logic['pq_part_col']:
-                        info_list = info_list[:int(logic['pq_part_col'])] + ['0'] + info_list[int(logic['pq_part_col']):]
+                        info_list = info_list[:int(logic['pq_part_col'])] + ['0'] + info_list[
+                                                                                    int(logic['pq_part_col']):]
 
             # Quality check for total info fields
             if prior_qtr_flag == 'n':
@@ -494,7 +496,7 @@ for row in lines:
                     corr_flag = info_list[int(logic['pq_corr_flag'])][:1]
                 else:
                     corr_flag = str(0)
-
+            print 'checkpoint 8'
             human.append(
                 {'type': type, 'state': state, 'labeler': labeler, 'prod': prod, 'size': size,
                  'inv_qtr': inv_qtr,
@@ -517,8 +519,15 @@ for row in lines:
             ocr_details["raw_info_list"] = "|".join(info_list)
 
             # process inv_qtr into date format before insert
-            split_inv_qtr = str(inv_qtr).split('Q')
+            if 'Q' in inv_qtr:
+                split_inv_qtr = str(inv_qtr).split('Q')
+            elif 'q' in inv_qtr:
+                split_inv_qtr = str(inv_qtr).split('q')
+            else:
+                raise MyException('invoice quarter in filename is of incorrect format')
+
             temp_qtr_date = ''
+            print 'checkpoint 9'
             if split_inv_qtr[1] == '1':
                 temp_qtr_date = split_inv_qtr[0] + '/01/01'
             elif split_inv_qtr[1] == '2':
@@ -612,9 +621,11 @@ with open('F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\lo
         + str(total_error_percent) + '%' + '\r\n')
 
 # create file for logging errors
-tech_error_file = 'F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_TECHNICAL_ERRORS.txt' % (inv_qtr, labeler, state, type)
+tech_error_file = 'F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_TECHNICAL_ERRORS.txt' % (
+inv_qtr, labeler, state, type)
 # tech_error_file = '%s_%s_%s_%s_TECHNICAL_ERRORS.txt' % (inv_qtr, labeler, state, type)
-error_file = 'F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_ERRORS.txt' % (inv_qtr, labeler, state, type)
+error_file = 'F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_ERRORS.txt' % (
+inv_qtr, labeler, state, type)
 # error_file = '%s_%s_%s_%s_ERRORS.txt' % (inv_qtr, labeler, state, type)
 
 # remove existing error files for this invoice
@@ -644,30 +655,39 @@ if errors:
 inv_header = ['type', 'state', 'labeler', 'prod', 'size', 'inv_qtr', 'util_qtr', 'inv_num', 'ndc', 'name', 'ura',
               'units', 'claimed', 'scripts', 'medi_reimb', 'non_medi_reimb', 'total_reimb', 'corr_flag']
 
-with open('F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_csv.txt' % (inv_qtr, labeler, state, type), 'wb') as output_file:
+with open('F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_csv.txt' % (
+inv_qtr, labeler, state, type), 'wb') as output_file:
     dict_writer = csv.DictWriter(output_file, inv_header)
     dict_writer.writeheader()
     dict_writer.writerows(human)
 
 # write all details into cms file
-with open('F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_cms.txt' % (inv_qtr, labeler, state, type), 'wb') as output_file:
+with open('F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_cms.txt' % (
+inv_qtr, labeler, state, type), 'wb') as output_file:
     for r in cms:
         output_file.write(r + '\r\n')
 
+file_name = invoice_file[str(invoice_file).rindex('text') + 4:]
+
+# capture attempt # from filename
+if 'attempt' in invoice_file:
+    attempt = invoice_file[str(invoice_file).rindex('_') + 1:str(invoice_file).rindex('.')]
+else:
+    attempt = '1'
+
 # insert into ocr_header table
-ocr_header_insert = "INSERT INTO OCR_HEADER VALUES (id,'%s',null,'%s','%s','%s','%s','%s', NOW())" % (
-    str(invoice_file), str(row_count), str(detail_row_count), str(error_count), str(unknown_error_count),
+ocr_header_insert = "INSERT INTO OCR_HEADER VALUES (id,'%s',%s,'%s','%s','%s','%s','%s', NOW())" % (
+    str(file_name), str(attempt), str(row_count), str(detail_row_count), str(error_count), str(unknown_error_count),
     str(total_error_percent))
 cursor.execute(ocr_header_insert)
 con.commit()
 
 # get id reference of this invoice for ocr_details & ocr_errors
-get_id_query = "SELECT id FROM OCR_HEADER WHERE invoice_file='%s' ORDER BY timestamp DESC LIMIT 1" % (
-    str(invoice_file))
+# get_id_query = "SELECT id FROM OCR_HEADER WHERE invoice_file='%s' ORDER BY timestamp DESC LIMIT 1" % (str(file_name))
 
-# # query string for SQL Server
-# get_id_query = "SELECT id FROM OCR_HEADER WHERE timestamp =  ( SELECT MAX( timestamp ) FROM OCR_HEADER WHERE invoice_file = '%s' )" % (
-#     str(invoice_file))
+# query string for SQL Server
+get_id_query = "SELECT id FROM OCR_HEADER WHERE timestamp =  ( SELECT MAX( timestamp ) FROM OCR_HEADER WHERE invoice_file = '%s' )" % (
+str(file_name))
 
 cursor.execute(get_id_query)
 ocr_header_id = cursor.fetchone()[0]
