@@ -25,7 +25,8 @@ inv_qtr = args[3]
 labeler = args[4]
 
 # MySQL connection
-con = mysql.connector.connect(user='root', password='ncsuball', host='127.0.0.1', database='medicaid')
+con = mysql.connector.connect(user='root', password='ncsuball', host='127.0.0.1',
+                              database='medicaid')
 cursor = con.cursor()
 
 # Quarter Conversion map for period_type : 'MM/DD/YY' & 'MM/DD/YYYY'
@@ -79,13 +80,30 @@ try:
     std_type = str(logic['std_type'])
     rtype = std_type
 except KeyError:
-    with open('log.txt', 'ab') as output_file:
+    with open('F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\log.txt', 'ab') as output_file:
         print str(key + ' not yet added to OCR tool, please contact brian.coleman@cumberlandcg.com')
         output_file.write(str(
             datetime.datetime.now()) + ' ' + key + ' not yet added to OCR tool, please contact brian.coleman@cumberlandcg.com' + '\r\n')
 
 for row in lines:
-    ocr_details = {}
+    ocr_details = {
+        "row_number": None,
+        "detail_row_number": None,
+        "ndc": None,
+        "ura": None,
+        "units": None,
+        "claimed": None,
+        "scripts": None,
+        "medi_reimbursed": None,
+        "non_medi_reimbursed": None,
+        "raw_detail_row": None,
+        "raw_info_list": None,
+        "invoice_qtr": None,
+        "utilization_qtr": None,
+        "invoice_number": None,
+        "error_type": None,
+        "error_message": None
+    }
     ocr_errors = {}
     row_count += 1
     row_clean = ''  # every row of raw text after performing a cleaning action and uppercased
@@ -230,7 +248,29 @@ for row in lines:
             print 'checkpoint 4'
             # setting ocr_details table info
             ocr_details["row_number"] = row_count
+            ocr_details["raw_detail_row"] = str(row_upper)  # upper cased raw detail row
             ocr_details["detail_row_number"] = detail_row_count
+            ocr_details["invoice_number"] = str(inv_num).replace(': ', '')
+            # process inv_qtr into date format before insert
+            if 'Q' in inv_qtr:
+                split_inv_qtr = str(inv_qtr).split('Q')
+            elif 'q' in inv_qtr:
+                split_inv_qtr = str(inv_qtr).split('q')
+            else:
+                raise MyException('invoice quarter in filename is of incorrect format')
+
+            temp_qtr_date = ''
+            print 'checkpoint 9'
+            if split_inv_qtr[1] == '1':
+                temp_qtr_date = split_inv_qtr[0] + '/01/01'
+            elif split_inv_qtr[1] == '2':
+                temp_qtr_date = split_inv_qtr[0] + '/04/01'
+            elif split_inv_qtr[1] == '3':
+                temp_qtr_date = split_inv_qtr[0] + '/07/01'
+            elif split_inv_qtr[1] == '4':
+                temp_qtr_date = split_inv_qtr[0] + '/10/01'
+
+            ocr_details["invoice_qtr"] = str(temp_qtr_date)
 
             # Get utilization quarter from the line item info
             if prior_qtr_flag == 'y':
@@ -245,6 +285,19 @@ for row in lines:
                         util_qtr = util_qtr_o[:1] + util_qtr_o[2:6]
                     row_clean = row_clean.replace(util_qtr_o, '')
 
+            # process util_qtr into date format before insert
+            temp_util_date = ''
+            temp_qtr = util_qtr[0]
+            temp_year = util_qtr[-4:]
+            if temp_qtr == '1':
+                temp_util_date = temp_year + '/01/01'
+            elif temp_qtr == '2':
+                temp_util_date = temp_year + '/04/01'
+            elif temp_qtr == '3':
+                temp_util_date = temp_year + '/07/01'
+            elif temp_qtr == '4':
+                temp_util_date = temp_year + '/10/01'
+            ocr_details["utilization_qtr"] = str(temp_util_date)
             # add labeler code for invoices that only include product code and size - requires ndc to be the first field
             if str(logic['ndc']) == '0':
                 checkr = re.sub("[^0-9\d.\-\s]", "", row_clean)
@@ -297,15 +350,15 @@ for row in lines:
             # Split out detail lines into a list of elements
             info_list = row_clean.split(' ')
 
-            # remove del_col columns
-            '''if length of the elements is longer than expected, 
-            remove the delete columns(del_col) from the list 
-            (only for invoices where current and prior format is the same)'''
-            if prior_qtr_flag == 'n':
-                if logic['del_col'] and logic['exp_col']:
-                    if len(info_list) > int(logic['exp_col']):
-                        for x in logic['del_col'].split('|'):
-                            del info_list[int(x) - 1:int(x)]
+            # # remove del_col columns
+            # '''if length of the elements is longer than expected,
+            # remove the delete columns(del_col) from the list
+            # (only for invoices where current and prior format is the same)'''
+            # if prior_qtr_flag == 'n':
+            #     if logic['del_col'] and logic['exp_col']:
+            #         if len(info_list) > int(logic['exp_col']):
+            #             for x in logic['del_col'].split('|'):
+            #                 del info_list[int(x) - 1:int(x)]
             print 'checkpoint 6'
             # Get NDC
             if prior_qtr_flag == 'n':
@@ -319,6 +372,8 @@ for row in lines:
                 raise MyException('ndc is not 11 characters, possible OCR misread, please review')
             if not str(ndc).strip().replace('-', '').isdigit():
                 raise MyException('ndc has non-numeric characters, possible OCR misread, please review')
+
+            ocr_details["ndc"] = str(ndc)
 
             # Extract labeler, prod and size from ndc(11)
             labeler = ndc[:5]
@@ -348,7 +403,7 @@ for row in lines:
                     if len(info_list) < int(logic['pq_exp_col']) and logic['pq_part_col']:
                         info_list = info_list[:int(logic['pq_part_col'])] + ['0'] + info_list[
                                                                                     int(logic['pq_part_col']):]
-
+            ocr_details["raw_info_list"] = "|".join(info_list)
             # Quality check for total info fields
             if prior_qtr_flag == 'n':
                 if len(info_list) != int(logic['exp_col']):
@@ -378,6 +433,7 @@ for row in lines:
                     ura = str("%012.6f" % float(ura))
                 else:
                     ura = str("%012.6f" % 0)
+            ocr_details["ura"] = float(ura)
 
             # Get Units
             if prior_qtr_flag == 'n':
@@ -402,6 +458,7 @@ for row in lines:
                     units = str('%015.3f' % float(units))
                 else:
                     str("%015.3f" % 0)
+            ocr_details["units"] = float(units)
             # print row_clean, units
 
             # Get Amount Claimed
@@ -423,7 +480,7 @@ for row in lines:
                     claimed = str("%012.2f" % float(claimed))
                 else:
                     claimed = str("%012.2f" % 0)
-
+            ocr_details["claimed"] = float(claimed)
             # print row_clean, claimed
 
             # Scripts
@@ -439,6 +496,7 @@ for row in lines:
                     scripts = str("%08.0f" % float(scripts))
                 else:
                     scripts = str("%08.0f" % 0)
+            ocr_details["scripts"] = int(scripts)
 
             # ignore unimportant lines
             if float(units) == 0 and float(ura) == 0 and float(scripts) == 0:
@@ -456,7 +514,7 @@ for row in lines:
                     medi_reimb = str("%013.2f" % float(info_list[int(logic['pq_medi_reimb'])]))
                 else:
                     medi_reimb = str("%013.2f" % 0)
-
+            ocr_details["medi_reimbursed"] = float(medi_reimb)
             # print row_clean, scripts
 
             # Non-Medicaid Reimbursement
@@ -470,7 +528,7 @@ for row in lines:
                     non_medi_reimb = str("%013.2f" % float(info_list[int(logic['pq_non_medi_reimb'])]))
                 else:
                     non_medi_reimb = str("%013.2f" % 0)
-
+            ocr_details["non_medi_reimbursed"] = float(non_medi_reimb)
             # print row_clean, non_medi_reimb
 
             # Total Reimbursement
@@ -505,58 +563,6 @@ for row in lines:
                  'non_medi_reimb': non_medi_reimb,
                  'total_reimb': total_reimb, 'corr_flag': corr_flag})
 
-            # setting ocr_details table info and appending to ocr_details_list
-            ocr_details["row_number"] = int(row_count)
-            ocr_details["detail_row_number"] = int(detail_row_count)
-            ocr_details["ndc"] = str(ndc)
-            ocr_details["ura"] = float(ura)
-            ocr_details["units"] = float(units)
-            ocr_details["claimed"] = float(claimed)
-            ocr_details["scripts"] = int(scripts)
-            ocr_details["medi_reimbursed"] = float(medi_reimb)
-            ocr_details["non_medi_reimbursed"] = float(non_medi_reimb)
-            ocr_details["raw_detail_row"] = str(row_upper)  # upper cased raw detail row
-            ocr_details["raw_info_list"] = "|".join(info_list)
-
-            # process inv_qtr into date format before insert
-            if 'Q' in inv_qtr:
-                split_inv_qtr = str(inv_qtr).split('Q')
-            elif 'q' in inv_qtr:
-                split_inv_qtr = str(inv_qtr).split('q')
-            else:
-                raise MyException('invoice quarter in filename is of incorrect format')
-
-            temp_qtr_date = ''
-            print 'checkpoint 9'
-            if split_inv_qtr[1] == '1':
-                temp_qtr_date = split_inv_qtr[0] + '/01/01'
-            elif split_inv_qtr[1] == '2':
-                temp_qtr_date = split_inv_qtr[0] + '/04/01'
-            elif split_inv_qtr[1] == '3':
-                temp_qtr_date = split_inv_qtr[0] + '/07/01'
-            elif split_inv_qtr[1] == '4':
-                temp_qtr_date = split_inv_qtr[0] + '/10/01'
-
-            ocr_details["invoice_qtr"] = str(temp_qtr_date)
-
-            # process util_qtr into date format before insert
-            temp_util_date = ''
-            temp_qtr = util_qtr[0]
-            temp_year = util_qtr[-4:]
-            if temp_qtr == '1':
-                temp_util_date = temp_year + '/01/01'
-            elif temp_qtr == '2':
-                temp_util_date = temp_year + '/04/01'
-            elif temp_qtr == '3':
-                temp_util_date = temp_year + '/07/01'
-            elif temp_qtr == '4':
-                temp_util_date = temp_year + '/10/01'
-
-            ocr_details["utilization_qtr"] = str(temp_util_date)
-            ocr_details["invoice_number"] = str(inv_num).replace(': ', '')
-
-            ocr_details_list.append(ocr_details)
-
             if len(rtype + state + labeler + prod + size + util_qtr +
                            name + ura + units + claimed + scripts + medi_reimb + non_medi_reimb + total_reimb + corr_flag) != 120:
                 print str(len(
@@ -585,22 +591,19 @@ for row in lines:
         print str(e)
         error_count += 1
         errors.append('row #: ' + str(row_count) + ' error: ' + str(e) + ' ' + row_clean)
-        ocr_errors["row_number"] = row_count
-        ocr_errors["detail_row_number"] = detail_row_count
-        ocr_errors["message"] = str(e.message)
-        ocr_errors["type"] = str("User Error")
-        ocr_error_list.append(ocr_errors)
+        ocr_details["error_type"] = "User Error"
+        ocr_details["error_message"] = str(e.message)
 
     except Exception as e:
         print row_clean
         print str(e.message)
         unknown_error_count += 1
         unknown_errors.append('row #: ' + str(row_count) + ' error: ' + str(e) + ' ' + row_clean)
-        ocr_errors["row_number"] = row_count
-        ocr_errors["detail_row_number"] = detail_row_count
-        ocr_errors["message"] = str(e.message)
-        ocr_errors["type"] = str("Technical Error")
-        ocr_error_list.append(ocr_errors)
+        ocr_details["error_type"] = "Technical Error"
+        ocr_details["error_message"] = str(e.message)
+
+    if ocr_details["row_number"] is not None:
+        ocr_details_list.append(ocr_details)
 
 # print performance and accuracy stats in console
 print error_count, unknown_error_count, detail_row_count
@@ -613,6 +616,7 @@ print labeler, state, type, rtype, util_qtr, inv_qtr, ' - Total rows: ' + str(ro
     total_error_percent) + '%'
 
 # Log OCR result stats
+# with open('log.txt', 'ab') as output_file:
 with open('F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\log.txt', 'ab') as output_file:
     output_file.write(
         str(datetime.datetime.now()) + ' ' + state + ' ' + type + ' ' + rtype + ' ' + util_qtr + ' - Total rows: ' +
@@ -622,10 +626,10 @@ with open('F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\lo
 
 # create file for logging errors
 tech_error_file = 'F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_TECHNICAL_ERRORS.txt' % (
-inv_qtr, labeler, state, type)
+    inv_qtr, labeler, state, type)
 # tech_error_file = '%s_%s_%s_%s_TECHNICAL_ERRORS.txt' % (inv_qtr, labeler, state, type)
 error_file = 'F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_ERRORS.txt' % (
-inv_qtr, labeler, state, type)
+    inv_qtr, labeler, state, type)
 # error_file = '%s_%s_%s_%s_ERRORS.txt' % (inv_qtr, labeler, state, type)
 
 # remove existing error files for this invoice
@@ -655,6 +659,7 @@ if errors:
 inv_header = ['type', 'state', 'labeler', 'prod', 'size', 'inv_qtr', 'util_qtr', 'inv_num', 'ndc', 'name', 'ura',
               'units', 'claimed', 'scripts', 'medi_reimb', 'non_medi_reimb', 'total_reimb', 'corr_flag']
 
+# with open('%s_%s_%s_%s_csv.txt' % (inv_qtr, labeler, state, type), 'wb') as output_file:
 with open('F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_csv.txt' % (
 inv_qtr, labeler, state, type), 'wb') as output_file:
     dict_writer = csv.DictWriter(output_file, inv_header)
@@ -662,18 +667,19 @@ inv_qtr, labeler, state, type), 'wb') as output_file:
     dict_writer.writerows(human)
 
 # write all details into cms file
+# with open('%s_%s_%s_%s_cms.txt' % (inv_qtr, labeler, state, type), 'wb') as output_file:
 with open('F:\\sharefile\\Shared Folders\\mft\\out\\medicaid\\4 - cms_format\\%s_%s_%s_%s_cms.txt' % (
-inv_qtr, labeler, state, type), 'wb') as output_file:
+        inv_qtr, labeler, state, type), 'wb') as output_file:
     for r in cms:
         output_file.write(r + '\r\n')
-
-file_name = invoice_file[str(invoice_file).rindex('text') + 4:]
 
 # capture attempt # from filename
 if 'attempt' in invoice_file:
     attempt = invoice_file[str(invoice_file).rindex('_') + 1:str(invoice_file).rindex('.')]
 else:
     attempt = '1'
+
+file_name = str(inv_qtr) + '_' + str(labeler) + '_' + state + '_' + str(type) + '_ATTEMPT_' + attempt
 
 # insert into ocr_header table
 ocr_header_insert = "INSERT INTO OCR_HEADER VALUES (id,'%s',%s,'%s','%s','%s','%s','%s', NOW())" % (
@@ -687,7 +693,7 @@ con.commit()
 
 # query string for SQL Server
 get_id_query = "SELECT id FROM OCR_HEADER WHERE timestamp =  ( SELECT MAX( timestamp ) FROM OCR_HEADER WHERE invoice_file = '%s' )" % (
-str(file_name))
+    str(file_name))
 
 cursor.execute(get_id_query)
 ocr_header_id = cursor.fetchone()[0]
@@ -696,20 +702,10 @@ ocr_header_id = cursor.fetchone()[0]
 for x in ocr_details_list:
     x["ocr_header_id"] = int(ocr_header_id)
 
-for x in ocr_error_list:
-    x["ocr_header_id"] = int(ocr_header_id)
-
 # formulate query for insertion into ocr_details
-ocr_details_insert = "INSERT INTO OCR_DETAILS VALUES(%(ocr_header_id)s, %(row_number)s, %(detail_row_number)s, %(ndc)s, %(ura)s, %(units)s, %(claimed)s, %(scripts)s, %(medi_reimbursed)s, %(non_medi_reimbursed)s, %(raw_detail_row)s, %(raw_info_list)s, %(invoice_qtr)s, %(utilization_qtr)s, %(invoice_number)s)"
+ocr_details_insert = "INSERT INTO OCR_DETAILS VALUES(%(ocr_header_id)s, %(row_number)s, %(detail_row_number)s, %(ndc)s, %(ura)s, %(units)s, %(claimed)s, %(scripts)s, %(medi_reimbursed)s, %(non_medi_reimbursed)s, %(raw_detail_row)s, %(raw_info_list)s, %(invoice_qtr)s, %(utilization_qtr)s, %(invoice_number)s, %(error_type)s, %(error_message)s)"
 cursor.executemany(ocr_details_insert, ocr_details_list)
 con.commit()
-
-# formulate query for insertion into ocr_errors
-ocr_errors_insert = "INSERT INTO OCR_ERRORS VALUES (%(ocr_header_id)s, %(row_number)s, %(detail_row_number)s, %(message)s, %(type)s)"
-# insert errors only if they exist
-if ocr_error_list:
-    cursor.executemany(ocr_errors_insert, ocr_error_list)
-    con.commit()
 
 cursor.close()
 con.close
